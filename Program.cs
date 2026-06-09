@@ -1,17 +1,29 @@
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+//Register the training authentication scheme
+builder.Services
+    .AddAuthentication("Training")
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions,
+    TrainingAuthHandler>("Training", null);
 
+//Register authorization services
+builder.Services.AddAuthorization();
+
+//Register controllers
 builder.Services.AddControllers();
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+//Middleware Pipeline
+app.UseRouting();           //Matches URL to endpoint
+app.UseAuthentication();    
+app.UseAuthorization();    
 
-app.UseHttpsRedirection();
-
-app.UseAuthorization();
-
-app.MapControllers();
-
+//Endpoints
+app.MapGet("/api/assessments/results", () => Results.Ok(new
+{
+    courseCode  = "CS-101",
+    studentId   = "S-001",
+    letterGrade = "A"
+}))
+.RequireAuthorization(); 
 app.Run();
