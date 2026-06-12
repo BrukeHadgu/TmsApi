@@ -4,7 +4,6 @@ public class RequestLoggingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<RequestLoggingMiddleware> _logger;
-
     public RequestLoggingMiddleware(
         RequestDelegate next,
         ILogger<RequestLoggingMiddleware> logger)
@@ -15,8 +14,6 @@ public class RequestLoggingMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         var correlationId = Guid.NewGuid().ToString("N")[..8];
-
-
         context.Response.Headers["X-Correlation-Id"] = correlationId;
 
         var stopwatch = Stopwatch.StartNew();

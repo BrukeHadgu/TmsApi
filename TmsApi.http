@@ -3,6 +3,3 @@
 GET {{TmsApi_HostAddress}}/weatherforecast/
 Accept: application/json
 
-### Check correlation ID header
-GET http://localhost:5001/api/assessments/results
-Accept: application/json
