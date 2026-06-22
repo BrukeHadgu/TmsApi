@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 [Route("api/enrollments")]
 public class EnrollmentsController(IEnrollmentService enrollmentService) : ControllerBase
 {
-    
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
