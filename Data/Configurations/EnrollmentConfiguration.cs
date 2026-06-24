@@ -22,5 +22,8 @@ public class EnrollmentConfiguration : IEntityTypeConfiguration<Enrollment>
             .WithMany(c => c.Enrollments)
             .HasForeignKey(e => e.CourseId)
             .OnDelete(DeleteBehavior.Restrict);// cant delete a course if there are enrollments with it
+
+        builder.Property(e => e.IsArchived)
+        .HasDefaultValue(false);
     }
 }

@@ -12,8 +12,8 @@ using TmsApi.Data;
 namespace TmsApi.Migrations
 {
     [DbContext(typeof(TmsDbContext))]
-    [Migration("20260622143618_AddPhoneNumber")]
-    partial class AddPhoneNumber
+    [Migration("20260624095054_AddAuditAndArchiveFields")]
+    partial class AddAuditAndArchiveFields
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -130,6 +130,9 @@ namespace TmsApi.Migrations
                         .HasPrecision(4, 2)
                         .HasColumnType("numeric(4,2)");
 
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean");
+
                     b.Property<int>("StudentId")
                         .HasColumnType("integer");
 
@@ -150,10 +153,6 @@ namespace TmsApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<decimal>("GPA")
                         .HasPrecision(3, 2)
                         .HasColumnType("numeric(3,2)");
@@ -161,19 +160,21 @@ namespace TmsApi.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<string>("PhoneNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<string>("RegistrationNumber")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
 
                     b.HasKey("Id");
 

@@ -6,8 +6,8 @@ public class Student
     public required string Name { get; set; }
     public decimal GPA { get; set; }
     public bool IsActive { get; set; } = true;
-    public string Email {get; set;} = string.Empty;
-    public string PhoneNumber {get; set;} = string.Empty;
+    public bool IsDeleted { get; set; } = false;   //for soft delete
+    //public uint Version { get; set; }               //for concurrency //removed because we are using xmin as concurrency token instead of this property
     public ICollection<Enrollment> Enrollments { get; set; } = new List<Enrollment>();
     public ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
 }

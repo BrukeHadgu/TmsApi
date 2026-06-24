@@ -14,3 +14,4 @@ public class TmsDbContext(DbContextOptions<TmsDbContext> options) : DbContext(op
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(TmsDbContext).Assembly);
     }
 }
+    
