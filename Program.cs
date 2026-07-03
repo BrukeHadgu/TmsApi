@@ -3,6 +3,9 @@ using Scalar.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using TmsApi.Data;
 using TmsApi.Entities;
+using TmsApi.Services;
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseDefaultServiceProvider(options =>
@@ -17,14 +20,17 @@ builder.Services
     .AddAuthentication("Training")
     .AddScheme<AuthenticationSchemeOptions, TrainingAuthHandler>("Training", null);
 
+
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 
+builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddSingleton<EnrollmentWorker>();
-builder.Services.AddSingleton<IEnrollmentService, EnrollmentService>();
+builder.Services.AddScoped<ICourseDbService, CourseDbService>();
+builder.Services.AddScoped<IEnrollmentDbService, EnrollmentDbService>();
+builder.Services.AddScoped<IEnrollmentService, EnrollmentService>();
 
 builder.Services.AddSingleton<IStudentService, StudentService>();
-builder.Services.AddSingleton<ICourseService, CourseService>();
 
 builder.Services.AddOptions<PaymentOptions>()
     .BindConfiguration("Payments")
@@ -85,14 +91,11 @@ app.MapGet("/api/error", () =>
 app.MapControllers();
 
 
-
-
-
 // Seed test data at startup
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<TmsDbContext>();
-    context.Database.Migrate(); // applies any pending migrations safely
+    context.Database.Migrate();
 
     if (!context.Students.Any())
     {
@@ -108,12 +111,12 @@ using (var scope = app.Services.CreateScope())
 
         var courses = new List<Course>
         {
-            new() { Code = "CS-101",  Title = "Introduction to Computer Science", Capacity = 30 },
-            new() { Code = "CS-201",  Title = "Data Structures and Algorithms",   Capacity = 25 },
-            new() { Code = "MAT-101", Title = "Calculus I",                       Capacity = 40 }
+            new() { Code = "CS-101",  Title = "Introduction to Computer Science", MaxCapacity = 30 },
+            new() { Code = "CS-201",  Title = "Data Structures and Algorithms",   MaxCapacity = 25 },
+            new() { Code = "MAT-101", Title = "Calculus I",                       MaxCapacity = 40 }
         };
         context.Courses.AddRange(courses);
-        context.SaveChanges(); // save students and courses first to get their Ids
+        context.SaveChanges(); // save first to generate IDs for students and courses
 
         var enrollments = new List<Enrollment>
         {
@@ -127,48 +130,4 @@ using (var scope = app.Services.CreateScope())
     }
 }
 app.Run();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

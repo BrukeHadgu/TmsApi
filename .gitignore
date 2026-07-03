@@ -1,2 +1,5 @@
 bin/
 obj/
+git add .
+git commit -m "M6 Session 1: REST controller, DTOs, validation, 409 business rule errors"
+git push
