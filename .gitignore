@@ -1,5 +1,12 @@
 bin/
 obj/
+
+git checkout -b your-branch-name
 git add .
 git commit -m "M6 Session 1: REST controller, DTOs, validation, 409 business rule errors"
+git push -u origin your-branch-name
+
+on the same branch 
+git add .
+git commit -m "Fix dark mode typo"
 git push

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using TmsApi.Data;
 using TmsApi.Entities;
 using TmsApi.Services;
+using TmsApi.Filters;
 
 
 
@@ -22,7 +23,12 @@ builder.Services
 
 
 builder.Services.AddAuthorization();
-builder.Services.AddControllers();
+//builder.Services.AddControllers();
+
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<AuditLogFilter>();
+});
 
 builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddSingleton<EnrollmentWorker>();
@@ -129,5 +135,11 @@ using (var scope = app.Services.CreateScope())
         context.SaveChanges();
     }
 }
-app.Run();
 
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var context = scope.ServiceProvider.GetRequiredService<TmsDbContext>();
+    await DataSeeder.SeedAsync(context);
+}
+app.Run();

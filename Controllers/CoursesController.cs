@@ -6,8 +6,19 @@ namespace TmsApi.Controllers;
 
 [ApiController]
 [Route("api/courses")]
-public class CoursesController(ICourseDbService courseService) : ControllerBase
+public class CoursesController(
+ICourseService courseService, LinkGenerator linkGenerator) : ControllerBase
 {
+
+    [HttpGet]
+    public async Task<IActionResult> GetCourses(
+        [FromQuery] PagedRequest request,
+        CancellationToken ct)
+    {
+        var result = await courseService.GetCoursesAsync(request, ct);
+        return Ok(result);
+    }
+
     [HttpGet("{id:int}", Name = nameof(GetCourseById))]
     public async Task<IActionResult> GetCourseById(int id, CancellationToken ct)
     {
@@ -17,15 +28,14 @@ public class CoursesController(ICourseDbService courseService) : ControllerBase
 
     [HttpPost]
     public async Task<IActionResult> CreateCourse(
-        [FromBody] CreateCourseRequest request,
+        CreateCourseRequest request,
         CancellationToken ct)
     {
-        //duplicate check
         if (await courseService.CodeExistsAsync(request.Code, ct))
         {
             return Conflict(new ProblemDetails
             {
-                Title = "Course code already exists",
+                Title  = "Course code already exists",
                 Detail = $"A course with code '{request.Code}' is already registered.",
                 Status = StatusCodes.Status409Conflict
             });
