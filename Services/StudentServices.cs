@@ -1,3 +1,7 @@
+//using Microsoft.EntityFrameworkCore;
+//using TmsApi.Data; 
+//using TmsApi.Entities;
+//namespace TmsApi.Services;
 public interface IStudentService
 {
     Task<StudentRecord> CreateAsync(string name, int age, decimal gpa);

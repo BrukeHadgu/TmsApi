@@ -9,6 +9,7 @@ public interface IEnrollmentDbService
 {
     Task<EnrollmentResponseDto?> GetByIdAsync(int courseId, int id, CancellationToken ct);
     Task<EnrollmentResponseDto> CreateAsync(int courseId, EnrollStudentRequest request, CancellationToken ct);
+    Task<IReadOnlyList<EnrollmentResponseDto>> GetByCourseAsync(int courseId, CancellationToken ct);
 }
 
 public class EnrollmentDbService(TmsDbContext context, ILogger<EnrollmentDbService> logger) : IEnrollmentDbService
@@ -41,5 +42,20 @@ public class EnrollmentDbService(TmsDbContext context, ILogger<EnrollmentDbServi
             request.StudentId, courseId, enrollment.Id);
 
         return (await GetByIdAsync(courseId, enrollment.Id, ct))!;
+    }
+
+    public async Task<IReadOnlyList<EnrollmentResponseDto>> GetByCourseAsync(
+        int courseId,
+        CancellationToken ct)
+    {
+        return await context.Enrollments
+            .AsNoTracking()
+            .Where(e => e.CourseId == courseId)
+            .Select(e => new EnrollmentResponseDto(
+                e.Id,
+                e.CourseId,
+                e.StudentId,
+                e.EnrolledAt))
+            .ToListAsync(ct);
     }
 }
