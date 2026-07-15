@@ -1,13 +1,11 @@
 using System;
 namespace TmsApi.Entities;
-
 public class Certificate
 {
     public int Id { get; set; }
-    public required string SerialNumber { get; set; } // natural key — printed on the certificate
+    public required string SerialNumber { get; set; } //natural key  printed on the certificate
     public DateTime IssuedAt { get; set; } = DateTime.UtcNow;
-
-    // Foreign keys + navigation
+    // Foreign keys plus navigation
     public int StudentId { get; set; }
     public int CourseId { get; set; }
     public Student Student { get; set; } = null!;

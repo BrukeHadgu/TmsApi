@@ -1,5 +1,4 @@
 namespace TmsApi.Entities;
-
 public class Assessment
 {
     public int Id { get; set; }

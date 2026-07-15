@@ -5,6 +5,8 @@ using TmsApi.Data;
 using TmsApi.Entities;
 using TmsApi.Services;
 using TmsApi.Filters;
+using Asp.Versioning;
+using TmsApi.Middleware;
 
 
 
@@ -23,20 +25,33 @@ builder.Services
 
 
 builder.Services.AddAuthorization();
-//builder.Services.AddControllers();
+
+builder.Services.AddApiVersioning(options =>
+    {
+        options.DefaultApiVersion = new ApiVersion(1, 0);
+        options.AssumeDefaultVersionWhenUnspecified = true;
+        options.ReportApiVersions = true;
+        options.ApiVersionReader = new UrlSegmentApiVersionReader();
+    })
+    .AddApiExplorer(options =>
+    {
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
+});
 
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<AuditLogFilter>();
 });
 
+
+
 builder.Services.AddScoped<ICourseService, CourseService>();
+builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddSingleton<EnrollmentWorker>();
 builder.Services.AddScoped<ICourseDbService, CourseDbService>();
 builder.Services.AddScoped<IEnrollmentDbService, EnrollmentDbService>();
 builder.Services.AddScoped<IEnrollmentService, EnrollmentService>();
-
-builder.Services.AddSingleton<IStudentService, StudentService>();
 
 builder.Services.AddOptions<PaymentOptions>()
     .BindConfiguration("Payments")
@@ -46,7 +61,17 @@ builder.Services.AddOptions<PaymentOptions>()
     
 
 builder.Services.AddProblemDetails();
-builder.Services.AddOpenApi();
+
+
+builder.Services.AddOpenApi("v1", options =>
+{
+    options.OpenApiVersion = Microsoft.OpenApi.OpenApiSpecVersion.OpenApi3_0;
+});
+builder.Services.AddOpenApi("v2", options =>
+{
+    options.OpenApiVersion = Microsoft.OpenApi.OpenApiSpecVersion.OpenApi3_0;
+});
+
 
 //builder.Services.AddDbContext<TmsDbContext>(options =>
  //options.UseNpgsql(builder.Configuration.GetConnectionString("TmsDatabase")));
@@ -64,9 +89,17 @@ app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference();
+    app.MapOpenApi("openapi/{documentName}.json");
+    app.MapScalarApiReference(options =>
+    {
+        options.Title = "TMS API Reference";
+        options
+            .AddDocument("v1", "TMS API V1", "/openapi/v1.json")
+            .AddDocument("v2", "TMS API V2", "/openapi/v2.json");
+    });
 }
+
+
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseAuthentication();
@@ -81,7 +114,6 @@ app.MapGet("/api/assessments/results", () => Results.Ok(new
 .RequireAuthorization(); //after an authentication scheme 
 
 //endpoints
-//exercise 2 worker smoke test
 app.MapGet("/api/enrollments/worker-smoke", (EnrollmentWorker worker) =>
 {
     worker.ProcessBatch();
@@ -94,6 +126,8 @@ app.MapGet("/api/error", () =>
     throw new TmsDatabaseException("Simulated database failure for ProblemDetails testing");
 });
 
+
+app.UseMiddleware<V1DeprecationMiddleware>();
 app.MapControllers();
 
 
