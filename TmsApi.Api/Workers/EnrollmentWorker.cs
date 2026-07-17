@@ -1,0 +1,14 @@
+using TmsApi.Infrastructure.Services;
+namespace TmsApi.Api.Workers;
+
+public class EnrollmentWorker(IServiceScopeFactory scopeFactory)
+{
+    public void ProcessBatch()
+    {
+        using var scope = scopeFactory.CreateScope();
+        var svc = scope.ServiceProvider
+            .GetRequiredService<IEnrollmentDbService>();
+
+        Console.WriteLine("Worker batch processed.");
+    }
+}
