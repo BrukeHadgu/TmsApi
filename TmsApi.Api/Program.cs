@@ -10,6 +10,16 @@ using TmsApi.Api.Workers;
 using TmsApi.Infrastructure.Persistence;
 using TmsApi.Infrastructure.Services;
 using TmsApi.Domain.Entities;
+using TmsApi.Application.Enrollments.Commands;
+using TmsApi.Application.Behaviors;
+using FluentValidation;
+using MediatR;
+using TmsApi.Api.ExceptionHandlers;
+using TmsApi.Application.Interfaces;
+//using TmsApi.Application.Interfaces;
+
+
+
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -45,6 +55,21 @@ builder.Services.AddControllers(options =>
 {
     options.Filters.Add<AuditLogFilter>();
 });
+
+
+builder.Services.AddMediatR(cfg =>
+    cfg.RegisterServicesFromAssembly(typeof(EnrollStudentHandler).Assembly));
+
+builder.Services.AddValidatorsFromAssembly(typeof(EnrollStudentValidator).Assembly);
+
+builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
+builder.Services.AddScoped<ICourseServices, CourseQueryService>();
+builder.Services.AddScoped<IEnrollmentServices, EnrollmentQueryService>();
 
 
 
@@ -86,7 +111,6 @@ var app = builder.Build();
 
 //Middleware Pipeline 
 app.UseMiddleware<RequestLoggingMiddleware>(); 
-app.UseExceptionHandler();                     
 app.UseStatusCodePages();                      
 
 if (app.Environment.IsDevelopment())
@@ -103,6 +127,7 @@ if (app.Environment.IsDevelopment())
 
 
 app.UseHttpsRedirection();
+app.UseExceptionHandler();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
