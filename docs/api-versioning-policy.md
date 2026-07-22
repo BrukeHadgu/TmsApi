@@ -1,12 +1,11 @@
 # TMS API Versioning Policy
-
 ## What counts as a breaking change
 A breaking change is anything that causes existing clients to fail without code changes:
 - Removing a field from a response
 - Renaming a field in a response
 - Changing a status code for an existing scenario
 - Adding a new required field to a request body
-- Tightening validation rules on an existing field
+- Tightening validation rules on an existing field like making an optional field mandatory
 - Changing the default sort order of a collection
 
 Any of these require a new API version.

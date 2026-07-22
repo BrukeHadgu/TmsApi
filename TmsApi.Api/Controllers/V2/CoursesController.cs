@@ -1,17 +1,14 @@
 using Asp.Versioning;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using TmsApi.Infrastructure.Persistence;
+using TmsApi.Application.Interfaces;
 
 namespace TmsApi.Api.Controllers.V2;
 
 [ApiController]
 [Route("api/v{version:apiVersion}/courses")]
 [ApiVersion("2.0")]
-public class CoursesController(TmsDbContext context) : ControllerBase
+public class CoursesController(ICachedCourseService cachedCourseService) : ControllerBase
 {
-    // V2 shape — structured envelope with data, meta, and links
-    // Dashboard team and Angular team use this version
     [HttpGet]
     public async Task<IActionResult> GetCourses(
         [FromQuery] int page     = 1,
@@ -21,48 +18,27 @@ public class CoursesController(TmsDbContext context) : ControllerBase
         page     = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 50);
 
-        var baseQuery  = context.Courses.AsNoTracking();
-        var totalCount = await baseQuery.CountAsync(ct);
+        var allCourses = await cachedCourseService.GetAllCoursesAsync(ct);
 
-        var rows = await baseQuery
-            .OrderBy(c => c.Title)
+        var totalCount = allCourses.Count;
+        var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+        var hasNext    = page < totalPages;
+        var hasPrev    = page > 1;
+
+        var rows = allCourses
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(c => new
-            {
-                c.Id,
-                c.Code,
-                c.Title,
-                c.MaxCapacity,
-                EnrollmentCount = c.Enrollments.Count
-            })
-            .ToListAsync(ct);
-
-        var totalPages  = (int)Math.Ceiling(totalCount / (double)pageSize);
-        var hasNext     = page < totalPages;
-        var hasPrevious = page > 1;
+            .ToList();
 
         return Ok(new
         {
             data = rows,
-            meta = new
-            {
-                totalCount,
-                page,
-                pageSize,
-                totalPages,
-                hasNext,
-                hasPrevious
-            },
+            meta = new { totalCount, page, pageSize, totalPages, hasNext, hasPrevious = hasPrev },
             links = new
             {
-                self = $"/api/v2/courses?page={page}&pageSize={pageSize}",
-                next = hasNext
-                    ? $"/api/v2/courses?page={page + 1}&pageSize={pageSize}"
-                    : (string?)null,
-                prev = hasPrevious
-                    ? $"/api/v2/courses?page={page - 1}&pageSize={pageSize}"
-                    : (string?)null,
+                self   = $"/api/v2/courses?page={page}&pageSize={pageSize}",
+                next   = hasNext ? $"/api/v2/courses?page={page + 1}&pageSize={pageSize}" : null,
+                prev   = hasPrev ? $"/api/v2/courses?page={page - 1}&pageSize={pageSize}" : null,
                 enroll = "/api/v2/enrollments"
             }
         });

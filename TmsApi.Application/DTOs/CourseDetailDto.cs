@@ -1,5 +1,3 @@
-using TmsApi.Application.DTOs;
-
 namespace TmsApi.Application.DTOs;
 public record CourseDetailDto
 {

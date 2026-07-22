@@ -3,9 +3,10 @@ using Microsoft.Extensions.Logging;
 using TmsApi.Infrastructure.Persistence;
 using TmsApi.Application.DTOs;
 using TmsApi.Domain.Entities;
+using TmsApi.Application.Interfaces;
 
 namespace TmsApi.Infrastructure.Services;
-public class CourseService(TmsDbContext context, ILogger<CourseService> logger) : ICourseService
+public class CourseService(TmsDbContext context, ILogger<CourseService> logger) : ICourseService, ICourseServices
 {
     public Task<CourseResponseDto?> GetByIdAsync(int id, CancellationToken ct) =>
         context.Courses
@@ -92,5 +93,11 @@ public class CourseService(TmsDbContext context, ILogger<CourseService> logger) 
         Page       = request.Page,
         PageSize   = request.PageSize
     };
+
 }
+public Task<Course?> GetByCodeAsync(string code, CancellationToken ct) =>
+    context.Courses
+        .AsNoTracking()
+        .Include(c => c.Enrollments)
+        .FirstOrDefaultAsync(c => c.Code == code, ct);
 }

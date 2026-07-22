@@ -1,4 +1,5 @@
 using TmsApi.Application.DTOs;
+using TmsApi.Domain.Entities;
 namespace TmsApi.Infrastructure.Services;
 public interface ICourseService
 {
@@ -6,4 +7,5 @@ public interface ICourseService
     Task<CourseResponseDto> CreateAsync(CreateCourseRequest request, CancellationToken ct);
     Task<bool> CodeExistsAsync(string code, CancellationToken ct);
     Task<PagedResponse<CourseResponseDto>> GetCoursesAsync(PagedRequest request, CancellationToken ct);
+    Task<Course?> GetByCodeAsync(string code, CancellationToken ct);
 }
