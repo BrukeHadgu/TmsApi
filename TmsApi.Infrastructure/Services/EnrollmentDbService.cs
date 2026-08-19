@@ -4,18 +4,24 @@ using TmsApi.Infrastructure.Persistence;
 using TmsApi.Application.DTOs;
 using TmsApi.Domain.Entities;
 
-
 namespace TmsApi.Infrastructure.Services;
-
 public interface IEnrollmentDbService
 {
     Task<EnrollmentResponseDto?> GetByIdAsync(int courseId, int id, CancellationToken ct);
     Task<EnrollmentResponseDto> CreateAsync(int courseId, EnrollStudentRequest request, CancellationToken ct);
     Task<IReadOnlyList<EnrollmentResponseDto>> GetByCourseAsync(int courseId, CancellationToken ct);
+    Task<bool> IsStudentEnrolledAsync(int courseId, int studentId, CancellationToken ct);
 }
 
 public class EnrollmentDbService(TmsDbContext context, ILogger<EnrollmentDbService> logger) : IEnrollmentDbService
 {
+    public async Task<bool> IsStudentEnrolledAsync(int courseId, int studentId, CancellationToken ct)
+    {
+        // Returns true if ANY enrollment matches both IDs
+        return await context.Enrollments
+            .AnyAsync(e => e.CourseId == courseId && e.StudentId == studentId, ct);
+    }
+
     public Task<EnrollmentResponseDto?> GetByIdAsync(int courseId, int id, CancellationToken ct) =>
         context.Enrollments
             .AsNoTracking()

@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using TmsApi.Application.DTOs;
 using TmsApi.Infrastructure.Services;
-using TmsApi.Domain.Entities;
 
 namespace TmsApi.Api.Controllers;
 
@@ -65,7 +64,15 @@ public class EnrollmentsController(
                 Status = StatusCodes.Status409Conflict
             });
         }
-
+        if (await enrollmentService.IsStudentEnrolledAsync(courseId, request.StudentId, ct))
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "Student already enrolled",
+                Detail = $"Student with ID {request.StudentId} is already enrolled in course '{course.Title}'.",
+                Status = StatusCodes.Status409Conflict
+            });
+        }
         var enrollment = await enrollmentService.CreateAsync(courseId, request, ct);
         return CreatedAtAction(
             nameof(GetEnrollment),

@@ -1,3 +1,5 @@
+//b2d042e3061c              10d3790c9b34
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -21,7 +23,18 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using TmsApi.Api.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
-
+using System.Threading.Channels;
+using TmsApi.Application.Transcripts;
+using TmsApi.Application.Notifications;
+using TmsApi.Infrastructure.Transcripts;
+using TmsApi.Infrastructure.Workers;
+using TmsApi.Api.Notifications;
+using TmsApi.Api.Hubs;
+using Microsoft.AspNetCore.Identity;
+using TmsApi.Infrastructure.Identity;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -33,9 +46,53 @@ builder.Host.UseDefaultServiceProvider(options =>
 });
 
 // Authentication
+builder.Services.AddScoped<TokenService>();
+
 builder.Services
-    .AddAuthentication("Training")
-    .AddScheme<AuthenticationSchemeOptions, TrainingAuthHandler>("Training", null);
+    .AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme =
+            JwtBearerDefaults.AuthenticationScheme;
+
+        options.DefaultChallengeScheme =
+            JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters =
+            new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+
+                ValidIssuer = builder.Configuration["Jwt:Issuer"],
+                ValidAudience = builder.Configuration["Jwt:Audience"],
+
+                IssuerSigningKey = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(
+                        builder.Configuration["Jwt:Key"]!))
+            };
+    });
+
+builder.Services.AddSignalR();
+
+builder.Services.AddIdentityCore<TmsUser>(options =>
+{
+    // Enterprise password policy
+    options.Password.RequiredLength = 12;
+    options.Password.RequireUppercase = true;
+    options.Password.RequireDigit = true;
+    options.Password.RequireNonAlphanumeric = true;
+
+    // Brute-force lockout protection
+    options.Lockout.MaxFailedAccessAttempts = 5;
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+    options.Lockout.AllowedForNewUsers = true;
+})
+.AddRoles<IdentityRole>()
+.AddEntityFrameworkStores<TmsDbContext>();
 
 builder.Services.AddAuthorization();
 
@@ -141,20 +198,34 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<AuditLogFilter>();
+})
+.AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.Converters.Add(
+        new System.Text.Json.Serialization.JsonStringEnumConverter());
 });
 
-// ── CORS
+
+
+var allowedOrigins = builder.Configuration
+    .GetSection("AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:4200"];
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAngular", policy =>
+    options.AddPolicy("TmsClient", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials() // vital for HttpOnly auth cookies in Session 2
+              .SetPreflightMaxAge(TimeSpan.FromMinutes(10)); // cache preflight for 10 min
     });
 });
 
-// ── MediatR + FluentValidation
+
+
+// MediatR + FluentValidation
 builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(EnrollStudentHandler).Assembly));
 
@@ -164,12 +235,20 @@ builder.Services.AddValidatorsFromAssembly(typeof(EnrollStudentValidator).Assemb
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
 
+builder.Services.AddSingleton(Channel.CreateBounded<TranscriptRequest>(
+    new BoundedChannelOptions(100)
+    {
+        FullMode = BoundedChannelFullMode.Wait
+    }));
 
 // exception handling and problem details
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
 builder.Services.AddProblemDetails();
 
 //app services 
+builder.Services.AddSingleton<ITranscriptStatusStore, InMemoryTranscriptStatusStore>();
+builder.Services.AddSingleton<ITranscriptNotificationService, SignalRTranscriptNotificationService>();
 builder.Services.AddScoped<ICourseServices, CourseQueryService>();
 builder.Services.AddScoped<ICachedCourseService, CachedCourseService>();
 builder.Services.AddScoped<IEnrollmentServices, EnrollmentQueryService>();
@@ -181,6 +260,7 @@ builder.Services.AddScoped<IEnrollmentService, EnrollmentService>();
 builder.Services.AddSingleton<EnrollmentWorker>();
 
 
+builder.Services.AddHostedService<TranscriptWorker>();
 // options pattern for payment settings
 builder.Services.AddOptions<PaymentOptions>()
     .BindConfiguration("Payments")
@@ -212,11 +292,23 @@ builder.Services.AddDbContext<TmsDbContext>(options =>
            .LogTo(Console.WriteLine, LogLevel.Information)
            .EnableSensitiveDataLogging());
 
+
+
+// XSRF double-submit protection
+// Header name must match Angular's withXsrfConfiguration cookieName
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "X-XSRF-TOKEN";
+});
+
+builder.Services.AddSignalR();
 var app = builder.Build();
 
 // Middleware Pipeline
 // CORS first to allow Angular frontend to make requests to the API
-app.UseCors("AllowAngular");
+//app.UseCors("AllowAngular");
+// instead of allow all origins, we use a named policy to allow only the Angular frontend origin
+
 
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseExceptionHandler();
@@ -235,12 +327,52 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseRouting();
+app.UseCors("TmsClient");
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+
+
+// Issue readable XSRF-TOKEN cookie for authenticated sessions
+// HttpOnly = false is intentional — Angular JavaScript must read this cookie
+// Malicious cross-site scripts cannot read it because SOP blocks cross-origin cookie access
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true ||
+        context.Request.Cookies.ContainsKey("tms_auth"))
+    {
+        var antiforgery = context.RequestServices
+            .GetRequiredService<IAntiforgery>();
+
+        var tokens = antiforgery.GetAndStoreTokens(context);
+
+        context.Response.Cookies.Append("XSRF-TOKEN", tokens.RequestToken!,
+            new CookieOptions
+            {
+                HttpOnly = false,  // must be false — Angular reads this
+                Secure   = !builder.Environment.IsDevelopment(), // HTTP allowed locally, HTTPS in production
+                SameSite = SameSiteMode.Strict
+            });
+    }
+    await next(context);
+});
 app.UseMiddleware<V1DeprecationMiddleware>();
 
 // minimal API endpoints
+app.MapGet("/test-hashing", () =>
+{
+    var service = new CryptoDemoService();
+        
+    string hash1 = service.HashUserPassword("Password123!");
+    string hash2 = service.HashUserPassword("Password123!");
+    // hash1 and hash2 are completely different strings because of unique random salts!
+    Console.WriteLine($"Hash 1: {hash1}");
+    Console.WriteLine($"Hash 2: {hash2}");
+    // Both verify to true against the same plain text:
+    bool match1 = service.VerifyUserPassword("Password123!", hash1);// true
+    bool match2 = service.VerifyUserPassword("Password123!", hash2);// true
+    });
+
 
 app.MapGet("/api/assessments/results", () => Results.Ok(new
 {
@@ -260,6 +392,9 @@ app.MapGet("/api/error", () =>
 {
     throw new TmsDatabaseException("Simulated database failure for ProblemDetails testing");
 });
+
+// Map SignalR hub
+app.MapHub<TmsHub>("/hubs/tms").RequireCors("TmsClient");
 
 app.MapControllers();
 

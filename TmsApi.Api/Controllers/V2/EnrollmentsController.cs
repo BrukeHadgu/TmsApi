@@ -50,3 +50,10 @@ public class EnrollmentsController(IMediator mediator) : ControllerBase
         return Ok(schedule);
     }
 }
+
+
+
+
+
+
+

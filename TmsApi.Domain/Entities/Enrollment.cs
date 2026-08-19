@@ -9,7 +9,8 @@ public class Enrollment
     public decimal? Grade { get; set; }//nullable  student may still be enrolled, no grade yet
     public DateTime EnrolledAt { get; set; } = DateTime.UtcNow;
     public bool IsArchived { get; set; } = false;
-    //Navigation properties let EF Core load the related Student and Course
     public Student Student { get; set; } = null!;
     public Course Course { get; set; } = null!;
+
+    public string Status { get; set; } = "Pending";
 }

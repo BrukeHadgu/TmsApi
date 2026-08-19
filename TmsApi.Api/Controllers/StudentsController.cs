@@ -30,6 +30,18 @@ public class StudentsController(
         return Ok(result);
     }
     */
+        // GET /api/students?page=1&pageSize=10&search=abebe
+            [HttpGet]
+            [ProducesResponseType(typeof(PagedResponse<StudentResponseDto>), StatusCodes.Status200OK)]
+            [EndpointSummary("List students with pagination")]
+            [EndpointDescription("Returns a paginated, optionally filtered list of TMS students. PageSize is capped at 50.")]
+            public async Task<IActionResult> GetStudents(
+                [FromQuery] PagedRequest request,
+                CancellationToken ct)
+            {
+                var result = await studentService.GetStudentsAsync(request, ct);
+                return Ok(result);
+            }
 
     // GET /api/students/{id}
     [HttpGet("{id:int}", Name = nameof(GetStudentById))]
