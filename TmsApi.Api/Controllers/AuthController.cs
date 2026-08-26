@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using TmsApi.Domain.Entities;
 using TmsApi.Infrastructure.Identity;
@@ -9,7 +11,7 @@ using TmsApi.Infrastructure.Services;
 namespace TmsApi.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/auth")]
 public class AuthController : ControllerBase
 {
     private readonly UserManager<TmsUser> _userManager;
@@ -36,7 +38,10 @@ public class AuthController : ControllerBase
         string LastName,
         string Role);
 
+    public record LoginRequest(string Email, string Password);
+
     [HttpPost("register")]
+    [EndpointSummary("Register")]
     public async Task<IActionResult> Register(
         [FromBody] RegisterRequest request,
         CancellationToken ct)
@@ -44,12 +49,7 @@ public class AuthController : ControllerBase
         var existingUser = await _userManager.FindByEmailAsync(request.Email);
 
         if (existingUser is not null)
-        {
-            return Ok(new
-            {
-                message = "Registration request received."
-            });
-        }
+            return Ok(new { message = "Registration request received." });
 
         await using var transaction =
             await _db.Database.BeginTransactionAsync(ct);
@@ -67,18 +67,18 @@ public class AuthController : ControllerBase
 
         if (!createResult.Succeeded)
         {
-            var errors = createResult.Errors
-                .Select(error => error.Description);
-
-            return BadRequest(new { errors });
+            return BadRequest(new
+            {
+                errors = createResult.Errors.Select(e => e.Description)
+            });
         }
 
         string? registrationNumber = null;
 
         if (string.Equals(
-                request.Role,
-                "Student",
-                StringComparison.OrdinalIgnoreCase))
+            request.Role,
+            "Student",
+            StringComparison.OrdinalIgnoreCase))
         {
             registrationNumber =
                 await GenerateRegistrationNumberAsync(ct);
@@ -90,20 +90,21 @@ public class AuthController : ControllerBase
                 GPA = 0m,
                 IsActive = true
             };
-
             _db.Students.Add(student);
+
             await _db.SaveChangesAsync(ct);
 
             user.StudentId = student.Id;
 
-            var updateResult = await _userManager.UpdateAsync(user);
+            var updateResult =
+                await _userManager.UpdateAsync(user);
 
             if (!updateResult.Succeeded)
             {
-                var errors = updateResult.Errors
-                    .Select(error => error.Description);
-
-                return BadRequest(new { errors });
+                return BadRequest(new
+                {
+                    errors = updateResult.Errors.Select(e => e.Description)
+                });
             }
         }
 
@@ -115,10 +116,10 @@ public class AuthController : ControllerBase
 
             if (!roleResult.Succeeded)
             {
-                var errors = roleResult.Errors
-                    .Select(error => error.Description);
-
-                return BadRequest(new { errors });
+                return BadRequest(new
+                {
+                    errors = roleResult.Errors.Select(e => e.Description)
+                });
             }
         }
 
@@ -127,14 +128,12 @@ public class AuthController : ControllerBase
 
         if (!roleAssignmentResult.Succeeded)
         {
-            var errors = roleAssignmentResult.Errors
-                .Select(error => error.Description);
-
-            return BadRequest(new { errors });
+            return BadRequest(new
+            {
+                errors = roleAssignmentResult.Errors.Select(e => e.Description)
+            });
         }
-
         await transaction.CommitAsync(ct);
-
         return Ok(new
         {
             message = "Registration successful.",
@@ -142,18 +141,21 @@ public class AuthController : ControllerBase
         });
     }
 
+
+    [EnableRateLimiting("AuthLimiter")]
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    [EndpointSummary("Login")]
+    public async Task<IActionResult> Login(
+        [FromBody] LoginRequest request)
     {
-        var user = await _userManager.FindByEmailAsync(request.Email);
+        var user =
+            await _userManager.FindByEmailAsync(request.Email);
 
         if (user is null)
-        {
             return Unauthorized(new
             {
                 detail = "Invalid credentials."
             });
-        }
 
         if (await _userManager.IsLockedOutAsync(user))
         {
@@ -168,7 +170,6 @@ public class AuthController : ControllerBase
             await _userManager.CheckPasswordAsync(
                 user,
                 request.Password);
-
         if (!validPassword)
         {
             await _userManager.AccessFailedAsync(user);
@@ -178,13 +179,16 @@ public class AuthController : ControllerBase
                 detail = "Invalid credentials."
             });
         }
-
         await _userManager.ResetAccessFailedCountAsync(user);
 
-        var roles = await _userManager.GetRolesAsync(user);
+        var roles =
+            await _userManager.GetRolesAsync(user);
 
-        var accessToken = _tokenService.GenerateJwt(user, roles);
+        // Generate access token
+        var accessToken =
+            _tokenService.GenerateJwt(user, roles);
 
+        // Generate refresh token
         var refreshToken = new RefreshToken
         {
             Token = Guid.NewGuid().ToString("N"),
@@ -193,26 +197,46 @@ public class AuthController : ControllerBase
             IsUsed = false,
             IsRevoked = false
         };
-
         _db.RefreshTokens.Add(refreshToken);
         await _db.SaveChangesAsync();
-
+        Response.Cookies.Append(
+        "refreshToken",refreshToken.Token,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                // Production HTTPS/secure = true.
+                Secure = false,
+                SameSite = SameSiteMode.Lax,
+                Expires =
+                    DateTimeOffset.UtcNow.AddDays(7),
+                Path = "/api/auth"
+            });
+        // only return the access token 
         return Ok(new
         {
-            accessToken,
-            refreshToken = refreshToken.Token
+            accessToken
         });
     }
 
-    public record RefreshRequest(string RefreshToken);
-
     [HttpPost("refresh")]
-    public async Task<IActionResult> Refresh(
-        [FromBody] RefreshRequest request)
+    [EndpointSummary("Refresh Token")]
+    public async Task<IActionResult> Refresh()
     {
-        var storedToken = await _db.RefreshTokens
-            .FirstOrDefaultAsync(token =>
-                token.Token == request.RefreshToken);
+        // Read refresh token from HttpOnly cookie
+        if (!Request.Cookies.TryGetValue(
+                "refreshToken",
+                out var refreshToken))
+        {
+            return Unauthorized(new
+            {
+                detail = "Refresh token cookie is missing."
+            });
+        }
+
+        var storedToken =
+            await _db.RefreshTokens
+                .FirstOrDefaultAsync(
+                    t => t.Token == refreshToken);
 
         if (storedToken is null)
         {
@@ -222,12 +246,15 @@ public class AuthController : ControllerBase
             });
         }
 
-        // A used token indicates replay/token-theft activity.
         if (storedToken.IsUsed)
         {
-            var userTokens = await _db.RefreshTokens
-                .Where(token => token.UserId == storedToken.UserId)
-                .ToListAsync();
+            // Token reuse detected.
+            // Revoke all refresh tokens belonging to this user.
+
+            var userTokens =
+                await _db.RefreshTokens
+                    .Where(t => t.UserId == storedToken.UserId)
+                    .ToListAsync();
 
             foreach (var token in userTokens)
             {
@@ -236,6 +263,13 @@ public class AuthController : ControllerBase
 
             await _db.SaveChangesAsync();
 
+            Response.Cookies.Delete(
+                "refreshToken",
+                new CookieOptions
+                {
+                    Path = "/api/auth"
+                });
+
             return Unauthorized(new
             {
                 detail =
@@ -243,18 +277,25 @@ public class AuthController : ControllerBase
             });
         }
 
-        if (
-            storedToken.IsRevoked ||
+        if (storedToken.IsRevoked ||
             storedToken.ExpiresAt < DateTime.UtcNow)
         {
+            Response.Cookies.Delete(
+                "refreshToken",
+                new CookieOptions
+                {
+                    Path = "/api/auth"
+                });
+
             return Unauthorized(new
             {
-                detail = "Refresh token expired or revoked."
+                detail =
+                    "Refresh token expired or revoked."
             });
         }
 
         storedToken.IsUsed = true;
-
+        //create new refresh token  
         var newRefreshToken = new RefreshToken
         {
             Token = Guid.NewGuid().ToString("N"),
@@ -265,10 +306,10 @@ public class AuthController : ControllerBase
         };
 
         _db.RefreshTokens.Add(newRefreshToken);
-        await _db.SaveChangesAsync();
-
-        var user = await _userManager.FindByIdAsync(
-            storedToken.UserId);
+        //find user
+        var user =
+            await _userManager.FindByIdAsync(
+                storedToken.UserId);
 
         if (user is null)
         {
@@ -278,15 +319,116 @@ public class AuthController : ControllerBase
             });
         }
 
-        var roles = await _userManager.GetRolesAsync(user);
+        var roles =
+            await _userManager.GetRolesAsync(user);
 
+        // Generate new access token
         var newAccessToken =
             _tokenService.GenerateJwt(user, roles);
 
+        await _db.SaveChangesAsync();
+
+        Response.Cookies.Append(
+            "refreshToken",
+            newRefreshToken.Token,
+            new CookieOptions
+            {
+                HttpOnly = true,
+
+                // Development:
+                Secure = false,
+
+                // Production HTTPS:
+                // Secure = true
+
+                SameSite = SameSiteMode.Lax,
+
+                Expires =
+                    DateTimeOffset.UtcNow.AddDays(7),
+
+                Path = "/api/auth"
+            });
+
+        // Return ONLY the new access token
         return Ok(new
         {
-            accessToken = newAccessToken,
-            refreshToken = newRefreshToken.Token
+            accessToken = newAccessToken
+        });
+    }
+
+    [Authorize]
+    [HttpPost("logout")]
+    [EndpointSummary("Logout")]
+    public async Task<IActionResult> Logout()
+    {
+        if (Request.Cookies.TryGetValue(
+                "refreshToken",
+                out var refreshToken))
+        {
+            var storedToken =
+                await _db.RefreshTokens
+                    .FirstOrDefaultAsync(
+                        t => t.Token == refreshToken);
+
+            if (storedToken is not null)
+            {
+                storedToken.IsRevoked = true;
+                await _db.SaveChangesAsync();
+            }
+        }
+
+        Response.Cookies.Delete(
+            "refreshToken",
+            new CookieOptions
+            {
+                Path = "/api/auth"
+            });
+
+        return Ok(new
+        {
+            message = "Logged out successfully."
+        });
+    }
+
+    [Authorize]
+    [HttpGet("me")]
+    [EndpointSummary("Get Current User")]
+    public async Task<IActionResult> GetCurrentUser()
+    {
+        var user = await _userManager.FindByIdAsync(
+            _userManager.GetUserId(User)!);
+
+        if (user is null)
+        {
+            return Unauthorized(new
+            {
+                detail = "Session expired."
+            });
+        }
+
+        var roles = await _userManager.GetRolesAsync(user);
+
+        string? registrationNumber = null;
+
+        if (user.StudentId.HasValue)
+        {
+            registrationNumber = await _db.Students
+                .AsNoTracking()
+                .Where(student => student.Id == user.StudentId.Value)
+                .Select(student => student.RegistrationNumber)
+                .FirstOrDefaultAsync();
+        }
+
+        return Ok(new
+        {
+            userId = user.Id,
+            email = user.Email,
+            firstName = user.FirstName,
+            lastName = user.LastName,
+            displayName = $"{user.FirstName} {user.LastName}",
+            role = roles.FirstOrDefault() ?? "Student",
+            studentId = user.StudentId,
+            registrationNumber
         });
     }
 
@@ -296,27 +438,29 @@ public class AuthController : ControllerBase
         var year = DateTime.UtcNow.Year;
         var prefix = $"TMS-{year}-";
 
-        var existingNumbers = await _db.Students
-            .AsNoTracking()
-            .Where(student =>
-                student.RegistrationNumber.StartsWith(prefix))
-            .Select(student => student.RegistrationNumber)
-            .ToListAsync(ct);
+        var existingNumbers =
+            await _db.Students
+                .AsNoTracking()
+                .Where(s =>
+                    s.RegistrationNumber.StartsWith(prefix))
+                .Select(s => s.RegistrationNumber)
+                .ToListAsync(ct);
 
-        var highestNumber = existingNumbers
-            .Select(number =>
-            {
-                var suffix = number[prefix.Length..];
+        var highestNumber =
+            existingNumbers
+                .Select(n =>
+                {
+                    var suffix = n[prefix.Length..];
 
-                return int.TryParse(suffix, out var parsed)
-                    ? parsed
-                    : 0;
-            })
-            .DefaultIfEmpty(0)
-            .Max();
+                    return int.TryParse(
+                        suffix,
+                        out var parsed)
+                        ? parsed
+                        : 0;
+                })
+                .DefaultIfEmpty(0)
+                .Max();
 
         return $"{prefix}{highestNumber + 1:0000}";
     }
-
-    public record LoginRequest(string Email, string Password);
 }

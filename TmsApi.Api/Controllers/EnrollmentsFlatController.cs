@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using TmsApi.Api.Hubs;
 using TmsApi.Application.Hubs;
 using TmsApi.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authorization;
 
 namespace TmsApi.Api.Controllers;
 
@@ -16,6 +17,7 @@ public class EnrollmentsFlatController(
     IHubContext<TmsHub, ITmsHubClient> hubContext) : ControllerBase
 {
     [HttpGet]
+    [Authorize(Roles = "Admin")]
     [EndpointSummary("Get all enrollments (admin view)")]
     public async Task<IActionResult> GetAll(CancellationToken ct)
     {
@@ -39,7 +41,9 @@ public class EnrollmentsFlatController(
     }
 
     [HttpPost("{id}/approve")]
+    [Authorize(Roles = "Admin")]
     [EndpointSummary("Approve an enrollment")]
+    
     public async Task<IActionResult> Approve(int id, CancellationToken ct)
     {
         var enrollment = await context.Enrollments.FindAsync(id, ct);
@@ -68,6 +72,7 @@ public class EnrollmentsFlatController(
     }
 
     [HttpPost("{id}/reject")]
+    [Authorize(Roles = "Admin")]
     [EndpointSummary("Reject an enrollment")]
     public async Task<IActionResult> Reject(int id, CancellationToken ct)
     {
